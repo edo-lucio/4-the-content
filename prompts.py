@@ -27,9 +27,10 @@ scenes_generation_prompt = """
 
 image_prompt_generation_prompt = """ 
     You're a talented YouTube video editor.
-    I'm going to provide you a sequence of scens.
+    I'm going to provide you a sequence of scenes.
     Please, give me a list of prompts to generate an image for the scenes. 
-    Return only the prompts separated by a newline. Here are the prompts: \n 
+    The prompts must effectively create a full representation of scene without assuming any animation.
+    Return only the prompts separated by a newline. Here are the scenes: \n 
     {scenes} 
     """
 

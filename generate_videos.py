@@ -38,4 +38,3 @@ if __name__ == "__main__":
 
     videos = generator.generate_text_content(
         handle=handle, title_description=title_description, script_description=script_description, n_videos=1)
-    print(videos)
