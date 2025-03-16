@@ -20,7 +20,7 @@ class VideoGenerator:
         """
         self.client = YouTubeClient(api_key or os.getenv("GOOGLE_API_KEY"))
         self.text_generator = TextGeneratorAgent(temperature=temperature, output_folder=text_output_folder)
-        # self.image_generator = ImageGeneratorAgent(output_folder=image_output_folder)
+        self.image_generator = ImageGeneratorAgent(output_folder=image_output_folder)
 
     def _get_channel_videos(self, handle: str, max_videos: int = 10) -> List[Video]:
         """
