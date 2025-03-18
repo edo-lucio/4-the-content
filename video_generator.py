@@ -1,6 +1,7 @@
 from get_videos import YouTubeClient, Video
 from generators import TextGeneratorAgent, ImageGeneratorAgent
 from typing import List, Dict
+import csv
 import torch
 import os
 
@@ -94,7 +95,7 @@ class VideoGenerator:
         return self.text_contents
     
     def generate_image_content(self, **kwargs) -> List[str]:
-        """     
+        """ 
             height: int = 1024,
             width: int = 1024,
             guidance_scale: float = 3.5,
@@ -104,11 +105,12 @@ class VideoGenerator:
         """
         if self.text_contents:
             contents = self.text_contents
-        else: 
-            import pandas as pd
-            contents = pd.read_csv(f"{self.text_output_folder}/scripts.csv")
-
-        prompts = contents["prompts"].apply(lambda x: x.split("\n"))
+        else:
+            with open(f"{self.text_output_folder}/scripts.csv", newline='', encoding='utf-8') as csvfile:
+                reader = csv.DictReader(csvfile)
+                contents = [row for row in reader]
+        
+        prompts = [row["prompts"].split("\n") for row in contents]
         self.images_paths = self.image_generator.generate(prompts_list=prompts, **kwargs)
 
         return self.images_paths
