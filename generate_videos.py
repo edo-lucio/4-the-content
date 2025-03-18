@@ -35,6 +35,12 @@ if __name__ == "__main__":
         Include a subtle yet effective call to action, encouraging engagement or further exploration."""
     
     topic = "esotherism and ancient knowledge"
+    generate_scripts = True
 
-    videos = generator.generate_text_content(
-        handle=handle, title_description=title_description, script_description=script_description, n_videos=1)
+    generator.generate_video(
+        handle=handle, 
+        title_description=title_description, 
+        script_description=script_description, 
+        n_output_videos=1, 
+        topic=topic,
+        generate_scripts=generate_scripts)

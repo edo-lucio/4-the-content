@@ -203,5 +203,9 @@ class ImageGeneratorAgent(ContentGenerator):
         return images_paths
             
 class AudioGeneratorAgent(ContentGenerator):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, output_folder: str="./images", output_format: str = "jpeg"):
+        super().__init__(output_folder)
+        self.pipe = FluxPipeline.from_pretrained("black-forest-labs/FLUX.1-dev", torch_dtype=torch.bfloat16)
+        self.pipe.enable_model_cpu_offload() #save some VRAM by offloading the model to CPU. Remove this if you have enough GPU power
+        self.output_format = output_format
+        
