@@ -1,31 +1,78 @@
 from get_videos import YouTubeClient, Video
 from generators import TextGeneratorAgent, ImageGeneratorAgent
-from typing import List, Dict
-import csv
-import torch
+from typing import List, Dict, Tuple
 import os
+
+import pandas as pd
 
 from dotenv import load_dotenv
 load_dotenv()
+
+class VideoSettings:
+    def __init__(
+        self,
+        handle: str,
+        title_description: str,
+        script_description: str,
+        images_description: str = "",
+        topic: str = "",
+        n_output_videos: int = 8,
+        max_reference_titles: int = 10,
+        max_reference_transcripts: int = 1,
+        sections: list = ["introduction", "core explanation", "conclusion"],
+        from_scenes: bool = True,
+        generate_scripts: bool = True,
+        # Image-related parameters
+        height: int = 1024,
+        width: int = 1024,
+        guidance_scale: float = 3.5,
+        num_inference_steps: int = 20,
+        max_sequence_length: int = 512
+    ):
+        # Create text settings dictionary
+        self.text_settings = {
+            "handle": handle,
+            "title_description": title_description,
+            "script_description": script_description,
+            "images_description": images_description,
+            "topic": topic,
+            "n_output_videos": n_output_videos,
+            "max_reference_titles": max_reference_titles,
+            "max_reference_transcripts": max_reference_transcripts,
+            "sections": sections,
+            "from_scenes": from_scenes
+        }
+        
+        # Create image settings dictionary
+        self.image_settings = {
+            "height": height,
+            "width": width,
+            "guidance_scale": guidance_scale,
+            "num_inference_steps": num_inference_steps,
+            "max_sequence_length": max_sequence_length
+        }
+
+        self.generate_scripts = generate_scripts
+        
+        for key, value in {**self.text_settings, **self.image_settings}.items():
+            setattr(self, key, value)
 
 class VideoGenerator:
     """Class to handle copying channel content and generating scripts."""
     
     def __init__(
-            self, api_key: str = None, text_output_folder: str = "./scripts", 
-            image_output_folder: str="./images", temperature: float=0.8):
+            self, yt_api_key: str = os.getenv("GOOGLE_API_KEY"), output_folder: str = "output", temperature: float=0.8):
         """
         Initialize the ChannelCopier with YouTube client.
         
         Args:
             api_key: Optional YouTube API key. If not provided, uses environment variable.
         """
-        self.client = YouTubeClient(api_key or os.getenv("GOOGLE_API_KEY"))
-        self.text_generator = TextGeneratorAgent(temperature=temperature, output_folder=text_output_folder)
-        self.image_generator = ImageGeneratorAgent(output_folder=image_output_folder)
+        self.client = YouTubeClient(yt_api_key)
+        self.text_generator = TextGeneratorAgent(temperature=temperature, output_folder=output_folder)
+        self.image_generator = ImageGeneratorAgent(output_folder=output_folder)
         self.text_contents = None
-        self.text_output_folder = text_output_folder
-        self.image_output_folder = image_output_folder
+        self.output_folder = output_folder # e.g.: /output/topic/title/scripts
 
     def _get_channel_videos(self, handle: str, max_videos: int = 10) -> List[Video]:
         """
@@ -43,18 +90,7 @@ class VideoGenerator:
 
         return videos
 
-    def _get_videos(
-        self,
-        handle: str,
-        title_description: str,
-        script_description: str,
-        topic: str = "",
-        n_output_videos: int = 8,
-        max_reference_titles: int = 10,
-        max_reference_transcripts: int = 1,
-        sections: list = ["introduction", "core part", "conclusion"]
-
-    ) -> List[Dict]:
+    def _generate_text(self, **kwargs) -> List[Dict]:
         """
         Generate scripts based on channel content.
         
@@ -69,6 +105,16 @@ class VideoGenerator:
         Returns:
             List of generated scripts
         """
+        handle = kwargs["handle"]
+        max_reference_titles = kwargs["max_reference_titles"]
+        max_reference_transcripts = kwargs["max_reference_transcripts"]
+        n_output_videos = kwargs["n_output_videos"]
+        topic = kwargs["topic"]
+        title_description = kwargs["title_description"]
+        script_description = kwargs["script_description"]
+        images_description = kwargs["images_description"]
+        sections = kwargs["sections"]
+        from_scenes = kwargs["from_scenes"]
 
         titles_references = []
         transcripts_references = []
@@ -79,19 +125,41 @@ class VideoGenerator:
             titles_references = [video.title for video in video_examples][:max_reference_titles]
             transcripts_references = [video.transcript for video in video_examples][:max_reference_transcripts]
 
-
         return self.text_generator.generate(
             n_output_scripts=n_output_videos,
             topic=topic,
             titles_examples=titles_references,
             title_description=title_description,
             script_description=script_description,
+            images_description=images_description,
+            from_scenes=from_scenes,
             transcripts=transcripts_references,
             sections=sections
         )
     
-    def generate_text_content(self, **kwargs) -> List[Dict]:
-        self.text_contents = self._get_videos(**kwargs)
+    def _get_prompts(self) -> Tuple[List[List], List[str]]:
+        prompts, paths = [], []
+        
+        for root, _, files in os.walk(self.output_folder):
+            if "scripts.csv" in files:
+                file_path = os.path.join(root, "scripts.csv")
+                try:
+                    video_prompts = pd.read_csv(file_path, sep="\t")["prompts"].iloc[0].split("\n")
+                    prompts.append(video_prompts)
+                    paths.append(root)
+                except Exception as e:
+                    print(f"Error reading {file_path}: {e}")
+        
+        return prompts, paths
+
+    def update_output_paths(self, text_output_folder=None, image_output_folder=None):
+        if text_output_folder:
+            self.text_generator.output_folder = text_output_folder
+        if image_output_folder:
+            self.image_generator.output_folder = image_output_folder
+
+    def generate_text_content(self,**kwargs) -> List[Dict]:
+        self.text_contents = self._generate_text(**kwargs)
         return self.text_contents
     
     def generate_image_content(self, **kwargs) -> List[str]:
@@ -103,35 +171,13 @@ class VideoGenerator:
             max_sequence_length: int = 512,
             generator: Generator = torch.Generator("cpu").manual_seed(0)
         """
-        if self.text_contents:
-            contents = self.text_contents
-        else:
-            with open(f"{self.text_output_folder}/scripts.csv", newline='', encoding='utf-8') as csvfile:
-                reader = csv.DictReader(csvfile)
-                contents = [row for row in reader]
-        
-        prompts = [row["prompts"].split("\n") for row in contents]
-        self.images_paths = self.image_generator.generate(prompts_list=prompts, **kwargs)
 
-        return self.images_paths
+        prompts, paths = self._get_prompts()
+
+        for prompt_list, path in zip(prompts, paths):
+            self.image_generator.generate(prompts_list=prompt_list, path=path, **kwargs)
     
-    def generate_video(
-        self, 
-        handle: str,
-        title_description: str,
-        script_description: str,
-        topic: str = "",
-        n_output_videos: int = 8,
-        max_reference_titles: int = 10,
-        max_reference_transcripts: int = 1,
-        sections: list = ["introduction", "core explanation", "conclusion"],
-        generate_scripts: bool = True,
-        height: int = 1024,
-        width: int = 1024,
-        guidance_scale: float = 3.5,
-        num_inference_steps: int = 20,
-        max_sequence_length: int = 512,
-        generator=torch.Generator("cpu").manual_seed(0)) -> None:
+    def generate_videos(self, video_settings: VideoSettings) -> None:
 
         """
         Complete pipeline for copying channel content and generating scripts.
@@ -148,13 +194,8 @@ class VideoGenerator:
             List of generated scripts
         """
 
-        if generate_scripts:
-            self.generate_text_content(
-                handle=handle, title_description=title_description, script_description=script_description,
-                topic=topic, n_output_videos=n_output_videos, max_reference_titles=max_reference_titles,
-                max_reference_transcripts=max_reference_transcripts, sections=sections)
+        if video_settings.generate_scripts:
+            self.generate_text_content(**video_settings.text_settings)
         
-        self.generate_image_content(
-            height=height, width=width, guidance_scale=guidance_scale, num_inference_steps=num_inference_steps,
-            max_sequence_length=max_sequence_length, generator=generator)
+        self.generate_image_content(**video_settings.image_settings)
 

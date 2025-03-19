@@ -23,20 +23,31 @@ scenes_generation_prompt = """
     Please, give me a list of scenes that suits the topic of the script. 
     Return only the scenes separated by a newline. Here is the script: \n 
     {script} 
+    \n
     """
 
 image_prompt_generation_prompt = """ 
-    You're a talented YouTube video editor.
-    I'm going to provide you a sequence of scenes.
-    Please, give me a list of prompts to generate an image for the scenes. 
-    The prompts must effectively create a full representation of scene without assuming any animation.
-    Return only the prompts separated by a newline. Here are the scenes: \n 
-    {scenes} 
+    Generate highly detailed image prompts based on the full script of the video about the following topic: {topic}.
+    Here is the full script of the video : {script}
+    Each image should follow the specific artistic and stylistic elements below, ensuring a coherent visual aesthetic:
+    {images_description}.
+    Return only the image prompts separated by a newline.
+    """
+
+image_prompt_generation_prompt_with_scenes = """ 
+    Generate highly detailed image prompts based on the scenes of the video about the following topic: {topic}.
+    Here are the scenes of the video : {scenes}
+    Each image should follow the specific artistic and stylistic elements below, ensuring a coherent visual aesthetic:
+    {images_description}.
+    Mantain a coherent style among the image prompts, making recurrent objects, characters and scenarios have the same 
+    characteristics among every prompt. 
+    Return only the image prompts separated by a newline.
     """
 
 prompts = {
     "title_generation_prompt": title_generation_prompt, 
     "script_generation_prompt": script_generation_prompt, 
     "scenes_generation_prompt": scenes_generation_prompt,
-    "image_prompt_generation_prompt": image_prompt_generation_prompt
+    "image_prompt_generation_prompt": image_prompt_generation_prompt,
+    "image_prompt_generation_prompt_with_scenes": image_prompt_generation_prompt_with_scenes
 }
