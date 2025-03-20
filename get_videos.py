@@ -79,13 +79,25 @@ class YouTubeClient:
             print(f"Error fetching transcript for video {video_id}: {e}")
             return None
         
+    def get_channel_info(self, channel_id):
+        """Get channel information including description."""
+        response = self.youtube.channels().list(
+            part='snippet,statistics',
+            id=channel_id
+        ).execute()
+        
+        if not response.get('items'):
+            raise ValueError(f"Channel ID '{channel_id}' not found.")
+            
+        return response['items'][0]
+    
 class Channel:
     """Represents a YouTube channel and its content."""
-    
     def __init__(self, client, channel_id):
         self.client = client
         self.id = channel_id
         self._uploads_playlist_id = None
+        self._info = None  # Add this line to initialize _info
 
     @property
     def uploads_playlist_id(self):
@@ -93,15 +105,36 @@ class Channel:
         if not self._uploads_playlist_id:
             self._uploads_playlist_id = self.client.get_uploads_playlist_id(self.id)
         return self._uploads_playlist_id
-
+    
+    @property
+    def info(self):
+        """Lazy-load channel information."""
+        if not self._info:
+            self._info = self.client.get_channel_info(self.id)
+        return self._info
+        
+    @property
+    def description(self):
+        """Get channel description."""
+        return self.info['snippet'].get('description', '')
+        
+    @property
+    def title(self):
+        """Get channel title."""
+        return self.info['snippet'].get('title', '')
+        
+    @property
+    def subscriber_count(self):
+        """Get channel subscriber count."""
+        return int(self.info['statistics'].get('subscriberCount', 0))
+    
     def get_videos(self, transcript=True, n=100):
         """Get all videos from the channel sorted by views descending."""
         playlist_items = self.client.get_playlist_items(self.uploads_playlist_id)
         videos = []
         video_ids = []
 
-        for i in range(n):
-            item = playlist_items[i]
+        for item in playlist_items:
             video_id = item['snippet']['resourceId']['videoId']
             title = item['snippet']['title']
             description = item['snippet']['description']
@@ -117,7 +150,7 @@ class Channel:
                 video.transcript = self.client.get_transcript(video.id)
             
         videos.sort(key=lambda v: v.views, reverse=True)
-        return videos
+        return videos[:n]
 
 class Video:
     """Represents a YouTube video with basic information."""

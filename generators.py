@@ -43,13 +43,18 @@ class TextGeneratorAgent(ContentGenerator):
             model: str="deepseek-chat"):
         
         client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
+
         self.title_generation_prompt = prompts["title_generation_prompt"]
         self.script_generation_prompt = prompts["script_generation_prompt"]
         self.scenes_generation_prompt = prompts["scenes_generation_prompt"] 
         self.image_prompt_generation_prompt = prompts["image_prompt_generation_prompt"] 
         self.image_prompt_generation_prompt_with_scenes = prompts["image_prompt_generation_prompt_with_scenes"]
+        self.script_adaptation_prompt = prompts["script_adaptation_prompt"]
+        self.thumnbail_generation_prompt = prompts["thumnbail_generation_prompt"]
+
         self.temperature = temperature
         self.model = model
+
         super().__init__(output_folder, client)
 
     def _save_output(self, output_path: str, video: Dict) -> None:
@@ -84,59 +89,74 @@ class TextGeneratorAgent(ContentGenerator):
     def _generate_titles(self) -> str:
         print("Generating Titles ...")
         prompt = self.title_generation_prompt.format(
-            n=self.n_output_scripts, titles="\n".join(self.titles_examples), description=self.title_description, topic=self.topic)
+            n=self.n_output_scripts, titles="\n".join(self.titles_examples), 
+            description=self.title_description, topic=self.topic, channel_description=self.channel_description)
         return self._request(prompt)
 
-    def _generate_section(self, title: str, section: str) -> str:
-        print(f"            - Generating {section}")
+    def _generate_section(self, title: str, section: str, script: str) -> str:
+        print(f"\t\t\t- Generating {section}")
+
+        script_adaptation_prompt = ""
+        if script: 
+            script_adaptation_prompt = self.script_adaptation_prompt.format(previous_script=script)
+            
         prompt = self.script_generation_prompt.format(
-            title=title, description=self.script_description, transcripts=self.transcripts_joined, section=section)
+            title=title, description=self.script_description, transcripts=self.transcripts_joined, 
+            section=section, script_adaptation_prompt=script_adaptation_prompt)
         return self._request(prompt, max_tokens=self.avg_transcript_length)
     
     def _generate_script(self, title: str):
-        print(f"        - Generating script")
+        print(f"\t\t- Generating script")
         script  = ""
 
         for section in self.sections:
-            section_script = self._generate_section(title=title, section=section)
+            section_script = self._generate_section(title=title, section=section, script=script)
             script += f"\n {section_script}"
 
         return script
     
     def _generate_scenes(self, script: str) -> str:
-        print(f"        - Generating scenes")
+        print(f"\t\t- Generating scenes")
         prompt = self.scenes_generation_prompt.format(script=script)
         return self._request(prompt, max_tokens=self.avg_transcript_length)
     
     def _generate_image_prompts(self, scenes: str, script: str) -> str:
-        print(f"        - Generating Image prompts")
-        if not scenes:
+        print(f"\t\t- Generating Image prompts")
+        if not scenes.strip():
             prompt = self.image_prompt_generation_prompt.format(
-                topic=self.topic, script=script, images_description=self.images_description)
+                topic=self.topic, script=script, images_description=self.images_description, n_images=self.n_images)
         else:
             prompt = self.image_prompt_generation_prompt_with_scenes.format(
                 topic=self.topic, scenes=scenes, images_description=self.images_description)
+        return self._request(prompt, max_tokens=self.avg_transcript_length)
+    
+    def _generate_thumbnail_prompts(self, script: str):
+        prompt = self.thumnbail_generation_prompt.format(script=script, images_description=self.images_description)
         return self._request(prompt, max_tokens=self.avg_transcript_length)
 
     def generate(
             self,
             n_output_scripts: int,
             topic: str = "",
+            channel_description: str = "",
             titles_examples: str = "", 
             title_description: str = "", 
             script_description: str = "",
             images_description: str = "",
+            n_images: int = 10,
             from_scenes: bool = True,
             transcripts: str = "", 
             sections: list = ["introduction", "core part", "conclusion"]) -> dict: 
         
         self.n_output_scripts = n_output_scripts
         self.topic = topic
+        self.channel_description = channel_description
         self.titles_examples = titles_examples
         self.title_description = title_description
         self.script_description = script_description
         self.images_description = images_description
         self.transcripts_joined = "\n".join(transcripts)
+        self.n_images = n_images
         self.sections = sections
         self.avg_transcript_length = round(sum(
             [len(transcript) for transcript in transcripts]) / len(transcripts) if transcripts else 1000)
@@ -147,19 +167,21 @@ class TextGeneratorAgent(ContentGenerator):
         titles = self._generate_titles().split("\n")
 
         for i in range(self.n_output_scripts):
-            video = {"title": "", "script": "", "scenes": "", "prompts": ""}
+            video = {"title": "", "script": "", "scenes": "", "image_prompts": ""}
 
             title = titles[i]
-            print(f"    Generating {title}")
+            print(f"\tGenerating {title}")
             title = title.strip()
             script = self._generate_script(title)
-            scenes = self._generate_scenes(script) if self.from_scenes  else ""
+            scenes = self._generate_scenes(script) if self.from_scenes  else " "
             image_prompts = self._generate_image_prompts(scenes=scenes, script=script)
+            thumbnail_prompt = self._generate_thumbnail_prompts(script)
 
             video["titles"] = title
             video["scripts"] = script
             video["scenes"] = scenes
-            video["prompts"] = image_prompts
+            video["image_prompts"] = image_prompts
+            video["thumbnail_prompts"] = thumbnail_prompt
 
             topic_name = topic.replace(" ", "-")
             title_name = "-".join((re.sub(r'[^A-Za-z\s]', '', title).strip().split(" ")))
