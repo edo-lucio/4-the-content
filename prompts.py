@@ -12,11 +12,11 @@ script_generation_prompt = """
     {script_adaptation_prompt}.
 
     Use the following general writing guidelines: \n
-    **GUIDELINES** : **{description}** 
+    GUIDELINES : **{description}** 
 
-    I'm going to give you the video's script of a channel I want to take inspiration from.
-    Use a similar tone as the following: \n
-    **SCRIPT REFERENCE**: **{transcripts}**
+    I'm going to give you a list of video's scripts of a channel I want to take inspiration from.
+    Use a similar tone and structure as the following. I'm going to separate each different script by using "**": \n
+    SCRIPT REFERENCES: {transcripts}
 
     Include only the script that the narrator should play.
     Do not include informations about the scenes, sections or transitions.
@@ -38,7 +38,6 @@ scenes_generation_prompt = """
 
 image_prompt_generation_prompt = """ 
     Generate {n_images} highly detailed image prompts based on the full script of the video about the following topic: {topic}.
-    Here is the full script of the video : {script}
     Each image should follow the specific artistic and stylistic elements below, ensuring a coherent visual aesthetic:
     {images_description}.
     Return only the image prompts separated by a newline.
@@ -55,12 +54,14 @@ image_prompt_generation_prompt_with_scenes = """
     """
 
 thumnbail_generation_prompt = """
-    Generate a highly detailed image prompts to generate the thumbnail for my YouTube video.
+    Generate a highly detailed image prompt to generate a catchy thumbnail for my YouTube video.
+    It must be attention grabber.
     I'm going to provide you with both the full script of the video and the description of the visuals.
     SCRIPT: ** {script} **
-    VISUALS DESCRIPTION: {images_description}
-    
-    Return only the image prompts separated by a newline
+    VISUALS DESCRIPTION: {thumbnail_description}
+    Return only the image prompt on the first line and the text overlay on the second.
+    Do not add any other text.
+    Separate the output with newlines. 
 """
 
 prompts = {

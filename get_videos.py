@@ -165,17 +165,3 @@ class Video:
 
     def __repr__(self):
         return f"Video(id='{self.id}', title='{self.title}', views={self.views})"
-
-if __name__ == "__main__":
-    API_KEY = os.getenv("GOOGLE_API_KEY")
-    client = YouTubeClient(API_KEY)
-    
-    try:
-        channel = client.get_channel_by_handle("@DailyJesusDevotional")
-        videos = channel.get_videos()
-        
-        print(f"Found {len(videos)} videos for channel (sorted by views):")
-        for video in videos[:10]:
-            print(f"- {video.title} (Views: {video.views}, Transcript: {video.transcript})")
-    except Exception as e:
-        print(f"Error: {e}")

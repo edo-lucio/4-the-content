@@ -3,3 +3,6 @@ scripts
 .env
 check.ipynb
 __pycache__
+output
+test_n.ipynb
+a.txt

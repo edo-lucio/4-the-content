@@ -1,12 +1,10 @@
 import os
 from openai import OpenAI
 from typing import List, Dict
-from diffusers import FluxPipeline
 import pandas as pd
 import requests
-import torch
-import re
 
+from utils import process_script, process_title, process_topic
 from prompts import prompts
 
 from dotenv import load_dotenv
@@ -76,7 +74,7 @@ class TextGeneratorAgent(ContentGenerator):
         response = self.client.chat.completions.create(
             model=self.model,
             messages=[
-                {"role": "system", "content": "You are a helpful YouTube script writer"},
+                {"role": "system", "content": f"You are a helpful YouTube script writer about the topic of {self.topic}"},
                 {"role": "user", "content": prompt},
             ],
             stream=False,
@@ -98,7 +96,7 @@ class TextGeneratorAgent(ContentGenerator):
 
         script_adaptation_prompt = ""
         if script: 
-            script_adaptation_prompt = self.script_adaptation_prompt.format(previous_script=script)
+            script_adaptation_prompt = self.script_adaptation_prompt.format(previous_script=f"{script}")
             
         prompt = self.script_generation_prompt.format(
             title=title, description=self.script_description, transcripts=self.transcripts_joined, 
@@ -124,15 +122,19 @@ class TextGeneratorAgent(ContentGenerator):
         print(f"\t\t- Generating Image prompts")
         if not scenes.strip():
             prompt = self.image_prompt_generation_prompt.format(
-                topic=self.topic, script=script, images_description=self.images_description, n_images=self.n_images)
+                topic=self.topic, images_description=self.images_description, 
+                n_images=self.n_images)
+            print(prompt)
         else:
             prompt = self.image_prompt_generation_prompt_with_scenes.format(
                 topic=self.topic, scenes=scenes, images_description=self.images_description)
+            
         return self._request(prompt, max_tokens=self.avg_transcript_length)
     
     def _generate_thumbnail_prompts(self, script: str):
-        prompt = self.thumnbail_generation_prompt.format(script=script, images_description=self.images_description)
-        return self._request(prompt, max_tokens=self.avg_transcript_length)
+        prompt = self.thumnbail_generation_prompt.format(
+            script=script, thumbnail_description=self.thumbnail_description)
+        return self._request(prompt, max_tokens=self.avg_transcript_length).split("\n")
 
     def generate(
             self,
@@ -143,6 +145,7 @@ class TextGeneratorAgent(ContentGenerator):
             title_description: str = "", 
             script_description: str = "",
             images_description: str = "",
+            thumbnail_description: str = "",
             n_images: int = 10,
             from_scenes: bool = True,
             transcripts: str = "", 
@@ -155,7 +158,8 @@ class TextGeneratorAgent(ContentGenerator):
         self.title_description = title_description
         self.script_description = script_description
         self.images_description = images_description
-        self.transcripts_joined = "\n".join(transcripts)
+        self.thumbnail_description = thumbnail_description
+        self.transcripts_joined = "\n**".join(transcripts)
         self.n_images = n_images
         self.sections = sections
         self.avg_transcript_length = round(sum(
@@ -175,16 +179,17 @@ class TextGeneratorAgent(ContentGenerator):
             script = self._generate_script(title)
             scenes = self._generate_scenes(script) if self.from_scenes  else " "
             image_prompts = self._generate_image_prompts(scenes=scenes, script=script)
-            thumbnail_prompt = self._generate_thumbnail_prompts(script)
+            # thumbnail_prompt = self._generate_thumbnail_prompts(script)
 
             video["titles"] = title
             video["scripts"] = script
             video["scenes"] = scenes
             video["image_prompts"] = image_prompts
-            video["thumbnail_prompts"] = thumbnail_prompt
+            # video["thumbnail_image"] = thumbnail_prompt[0]
+            # video["thumbnail_text"] = thumbnail_prompt[1]
 
-            topic_name = topic.replace(" ", "-")
-            title_name = "-".join((re.sub(r'[^A-Za-z\s]', '', title).strip().split(" ")))
+            topic_name = process_topic(topic)
+            title_name = process_title(title)
             folder_name = self.Folder(f"./{self.output_folder}/{topic_name}/{title_name}").path
             output_path = f"{folder_name}/scripts.csv"
             self._save_output(output_path=output_path, video=video)
@@ -196,7 +201,7 @@ class ImageGeneratorAgent(ContentGenerator):
             self, 
             api_key: str = os.getenv("NEBIUS_API_KEY"), 
             output_folder: str="./images", 
-            output_format: str = "jpeg",
+            output_format: str = "png",
             model: str = "black-forest-labs/flux-dev"):
         
         client = OpenAI(base_url="https://api.studio.nebius.com/v1/", api_key=api_key)
@@ -225,7 +230,8 @@ class ImageGeneratorAgent(ContentGenerator):
             model=self.model,
             prompt=prompt,
             response_format="url",
-            extra_body=extra_body
+            extra_body=extra_body,
+            style="vivid"
         )
 
         return response.data[0].url
@@ -253,13 +259,15 @@ class ImageGeneratorAgent(ContentGenerator):
         height: int=1024, 
         width: int=1024, 
         guidance_scale: float = 3.5, 
-        num_inference_steps: int = 20, 
+        num_inference_steps: int = 30, 
         max_sequence_length: int = 512):
 
-        prompts_list = [prompt for prompt in prompts_list if prompt.strip()]
+        print(f"Generating Images using {self.model}")
+
+        prompts_list_filtered = [prompt for prompt in prompts_list if prompt.strip()]
         folder_path = self.Folder(f"{path}/images").path
 
-        for i, prompt in enumerate(prompts_list):
+        for i, prompt in enumerate(prompts_list_filtered):
             image_path = f"{folder_path}/{i}.{self.output_format}"
             self.generate_image(
                 prompt=prompt, image_path=image_path,
@@ -268,9 +276,37 @@ class ImageGeneratorAgent(ContentGenerator):
                 max_sequence_length=max_sequence_length)
             
 class AudioGeneratorAgent(ContentGenerator):
-    def __init__(self, output_folder: str="./images", output_format: str = "jpeg"):
-        super().__init__(output_folder)
-        self.pipe = FluxPipeline.from_pretrained("black-forest-labs/FLUX.1-dev", torch_dtype=torch.bfloat16)
-        self.pipe.enable_model_cpu_offload() #save some VRAM by offloading the model to CPU. Remove this if you have enough GPU power
+    def __init__(self, output_folder: str="./audios", output_format: str = "mp3"):
+        client = OpenAI(base_url="http://localhost:8880/v1", api_key="not-needed")
         self.output_format = output_format
+        super().__init__(output_folder, client)
+
+    def _lower_pitch(self, audio_path: str, pitch_shift: float) -> None: 
+        from pydub import AudioSegment
+        file_name = audio_path.split(".")[0]
+        vanilla_audio = AudioSegment.from_mp3(audio_path)
+        overrides = {"frame_rate": int(vanilla_audio.frame_rate * (2.0 ** (pitch_shift / 12.0)))}
+        pitched_audio = vanilla_audio._spawn(vanilla_audio.raw_data, overrides=overrides)
+        pitch_shifted_filename = f'{file_name}.{self.output_format}'
+        pitched_audio.export(pitch_shifted_filename, format=self.output_format)
+
+    def generate(self, script: str, path: str, **kwargs) -> None:
+        script_processed = process_script(script)
+        folder_path = self.Folder(f"{path}/audio").path
+        audio_path = f"{folder_path}/audio.{self.output_format}"
+
+        voice = kwargs["voice"]
+        pitch_shift = kwargs["pitch_shift"]
+        speed = kwargs["speed"]
         
+        print(f"Generating Audios using Kokoro...")
+        with self.client.audio.speech.with_streaming_response.create(
+            model="kokoro",
+            voice=voice, # single or multiple voicepack combo
+            input=script_processed,
+            speed=speed
+        ) as response:
+            response.stream_to_file(audio_path)
+
+        if pitch_shift:
+            self._lower_pitch(audio_path, pitch_shift)

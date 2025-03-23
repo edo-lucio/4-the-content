@@ -1,5 +1,5 @@
 from get_videos import YouTubeClient, Video
-from generators import TextGeneratorAgent, ImageGeneratorAgent
+from generators import TextGeneratorAgent, ImageGeneratorAgent, AudioGeneratorAgent
 from typing import List, Dict, Tuple
 import os
 
@@ -15,6 +15,7 @@ class VideoSettings:
         title_description: str,
         script_description: str,
         images_description: str = "",
+        thumbnail_description: str = "",
         topic: str = "",
         n_output_videos: int = 8,
         n_images: int = 10,
@@ -23,12 +24,19 @@ class VideoSettings:
         sections: list = ["introduction", "core explanation", "conclusion"],
         from_scenes: bool = True,
         generate_scripts: bool = True,
+        generate_images: bool = True,
+        generate_audios: bool = True,
         # Image-related parameters
         height: int = 1024,
         width: int = 1024,
         guidance_scale: float = 3.5,
         num_inference_steps: int = 20,
-        max_sequence_length: int = 512
+        max_sequence_length: int = 512,
+        # Audio-related parameters
+        voice: str = "af_sky+af_bella",
+        pitch_shift: float = 0,
+        speed: float = 1
+
     ):
         # Create text settings dictionary
         self.text_settings = {
@@ -37,6 +45,7 @@ class VideoSettings:
             "title_description": title_description,
             "script_description": script_description,
             "images_description": images_description,
+            "thumbnail_description": thumbnail_description,
             "topic": topic,
             "n_output_videos": n_output_videos,
             "max_reference_titles": max_reference_titles,
@@ -54,7 +63,15 @@ class VideoSettings:
             "max_sequence_length": max_sequence_length
         }
 
+        self.audio_settings = {
+            "voice": voice,
+            "pitch_shift": pitch_shift,
+            "speed": speed
+        }
+
         self.generate_scripts = generate_scripts
+        self.generate_images = generate_images
+        self.generate_audios = generate_audios
         
         for key, value in {**self.text_settings, **self.image_settings}.items():
             setattr(self, key, value)
@@ -73,6 +90,7 @@ class VideoGenerator:
         self.client = YouTubeClient(yt_api_key)
         self.text_generator = TextGeneratorAgent(temperature=temperature, output_folder=output_folder)
         self.image_generator = ImageGeneratorAgent(output_folder=output_folder)
+        self.audio_generator = AudioGeneratorAgent(output_folder=output_folder)
         self.text_contents = None
         self.output_folder = output_folder # e.g.: /output/topic/title/scripts
 
@@ -99,15 +117,17 @@ class VideoGenerator:
 
         return videos, description
 
-    def _get_prompts(self) -> Tuple[List[List], List[str]]:
+    def _get_content(self, content) -> Tuple[List[List], List[str]]:
         prompts, paths = [], []
+        content_folder = "images" if content == ("image_prompts" or "thumbnail_image") else "audio"
         
         for root, dirs, files in os.walk(self.output_folder):
-            if "scripts.csv" in files and not "images" in dirs:
+            if "scripts.csv" in files and not content_folder in dirs:
                 file_path = os.path.join(root, "scripts.csv")
                 try:
-                    video_prompts = pd.read_csv(file_path, sep="\t")["image_prompts"].iloc[0].split("\n")
-                    prompts.append(video_prompts)
+                    video_content = pd.read_csv(file_path, sep="\t")[content].iloc[0]
+                    video_content = video_content.split("\n") if content_folder == "images" else video_content
+                    prompts.append(video_content)
                     paths.append(root)
                 except Exception as e:
                     print(f"Error reading {file_path}: {e}")
@@ -137,6 +157,7 @@ class VideoGenerator:
         title_description = kwargs["title_description"]
         script_description = kwargs["script_description"]
         images_description = kwargs["images_description"]
+        thumbnail_description = kwargs["thumbnail_description"]
         sections = kwargs["sections"]
         from_scenes = kwargs["from_scenes"]
         n_images = kwargs["n_images"]
@@ -154,6 +175,7 @@ class VideoGenerator:
             n_output_scripts=n_output_videos,
             topic=topic,
             channel_description=channel_description,
+            thumbnail_description=thumbnail_description,
             titles_examples=titles_references,
             title_description=title_description,
             script_description=script_description,
@@ -176,11 +198,17 @@ class VideoGenerator:
             generator: Generator = torch.Generator("cpu").manual_seed(0)
         """
 
-        prompts, paths = self._get_prompts()
+        prompts, paths = self._get_content("image_prompts")
 
         for prompt_list, path in zip(prompts, paths):
             self.image_generator.generate(prompts_list=prompt_list, path=path, **kwargs)
-    
+
+    def generate_audio_content(self, **kwargs):
+        scripts, paths = self._get_content("scripts")
+
+        for script, path in zip(scripts, paths):
+            self.audio_generator.generate(script=script, path=path, **kwargs)
+
     def generate_videos(self, video_settings: VideoSettings) -> None:
 
         """
@@ -201,5 +229,9 @@ class VideoGenerator:
         if video_settings.generate_scripts:
             self.generate_text_content(**video_settings.text_settings)
         
-        self.generate_image_content(**video_settings.image_settings)
+        if video_settings.generate_images:
+            self.generate_image_content(**video_settings.image_settings)
+
+        if video_settings.generate_audios:
+            self.generate_audio_content(**video_settings.audio_settings)
 
