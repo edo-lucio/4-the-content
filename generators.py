@@ -1,11 +1,12 @@
 import os
-from openai import OpenAI
 from typing import List, Dict
 import pandas as pd
 import requests
 
-from utils import process_script, process_title, process_topic
+from utils import process_script, process_title, process_topic, batched
 from prompts import prompts
+
+from clients import TensorArtClient, OpenAI
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -16,13 +17,13 @@ class ContentGenerator:
             self.path = path
             os.makedirs(self.path, exist_ok=True)
 
-    def __init__(self, output_folder: str, client: OpenAI):
+    def __init__(self, output_folder: str, client: object):
         self.output_folder = output_folder
         self.client = client
         os.makedirs(output_folder, exist_ok=True)
     
     def _save_output(self):
-        pass
+        raise NotImplementedError("Subclasses must implement generate()")
 
     def _request(self):
         pass
@@ -231,7 +232,6 @@ class ImageGeneratorAgent(ContentGenerator):
             prompt=prompt,
             response_format="url",
             extra_body=extra_body,
-            style="vivid"
         )
 
         return response.data[0].url
@@ -275,6 +275,51 @@ class ImageGeneratorAgent(ContentGenerator):
                 guidance_scale=guidance_scale, num_inference_steps=num_inference_steps, 
                 max_sequence_length=max_sequence_length)
             
+class TensorArtGenerator(ContentGenerator): 
+    def __init__(
+        self, 
+        api_key: str = os.getenv("TENSOR_ART_API_KEY"), 
+        app_id: str = os.getenv("TENSOR_ART_APP_ID"), 
+        output_folder: str="./images", 
+        output_format: str = "png",):
+
+        client = TensorArtClient(app_id=app_id, api_key=api_key)
+
+        self.output_format = output_format
+
+        super().__init__(output_folder, client)
+
+    def _save_output(self, image_url: str, image_path: str):
+        response = requests.get(image_url, stream=True)
+        if response.status_code == 200:
+            with open(image_path, 'wb') as file:
+                for chunk in response.iter_content(1024):
+                    file.write(chunk)
+            print(f"Image downloaded successfully: {image_path}")
+        else:
+            print(f"Failed to download image. Status code: {response.status_code}")
+
+    def _request(self, prompt, stages): 
+            response = self.client.generate(prompt, stages)
+
+            return response["job"]["successInfo"]["images"][0]["url"]
+
+    def generate(self, prompts_list: List[str], path: str, **kwargs):
+        print("Generating images ...") 
+        prompts_list_filtered = [prompt for prompt in prompts_list if prompt.strip()]
+        folder_path = self.Folder(f"{path}/images").path
+        stages = kwargs["stages"]
+        image_urls = []
+
+        for prompt_batch in batched(prompts_list_filtered, 4):  # Process in chunks of 4
+            print(f"Generating image for batch")
+            url_results = self.client.generate(prompt_batch, stages)
+            image_urls += url_results
+
+        for i, url in enumerate(image_urls):
+            image_path = f"{folder_path}/{i}.{self.output_format}"
+            self._save_output(image_url=url, image_path=image_path)
+
 class AudioGeneratorAgent(ContentGenerator):
     def __init__(self, output_folder: str="./audios", output_format: str = "mp3"):
         client = OpenAI(base_url="http://localhost:8880/v1", api_key="not-needed")

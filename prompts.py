@@ -38,6 +38,7 @@ scenes_generation_prompt = """
 
 image_prompt_generation_prompt = """ 
     Generate {n_images} highly detailed image prompts based on the full script of the video about the following topic: {topic}.
+    Each prompt must contain highly descriptive informations about the content of the image and exhaustive guidelines on the artistic style.
     Each image should follow the specific artistic and stylistic elements below, ensuring a coherent visual aesthetic:
     {images_description}.
     Return only the image prompts separated by a newline.

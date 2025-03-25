@@ -40,6 +40,7 @@ if __name__ == "__main__":
     voice = config.get("voice", "am_bella+am_michael")
     pitch_shift = config.get("pitch_shift", 0)
     speed = config.get("speed", 1)
+    stages = config.get("stages", {})
     
     generator = VideoGenerator(temperature=temperature)
     
@@ -58,8 +59,7 @@ if __name__ == "__main__":
         max_reference_titles=max_reference_titles,
         sections=sections,
         max_reference_transcripts=max_reference_transcripts,
-        height=height, 
-        width=width,
+        stages=stages,
         voice=voice,
         pitch_shift=pitch_shift, 
         speed=speed

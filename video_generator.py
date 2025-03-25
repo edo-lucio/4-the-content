@@ -1,5 +1,5 @@
 from get_videos import YouTubeClient, Video
-from generators import TextGeneratorAgent, ImageGeneratorAgent, AudioGeneratorAgent
+from generators import TextGeneratorAgent, TensorArtGenerator, AudioGeneratorAgent
 from typing import List, Dict, Tuple
 import os
 
@@ -26,12 +26,10 @@ class VideoSettings:
         generate_scripts: bool = True,
         generate_images: bool = True,
         generate_audios: bool = True,
+
         # Image-related parameters
-        height: int = 1024,
-        width: int = 1024,
-        guidance_scale: float = 3.5,
-        num_inference_steps: int = 20,
-        max_sequence_length: int = 512,
+        stages: List[Dict] = [],
+
         # Audio-related parameters
         voice: str = "af_sky+af_bella",
         pitch_shift: float = 0,
@@ -55,13 +53,7 @@ class VideoSettings:
         }
         
         # Create image settings dictionary
-        self.image_settings = {
-            "height": height,
-            "width": width,
-            "guidance_scale": guidance_scale,
-            "num_inference_steps": num_inference_steps,
-            "max_sequence_length": max_sequence_length
-        }
+        self.image_settings = { "stages": stages }
 
         self.audio_settings = {
             "voice": voice,
@@ -89,7 +81,7 @@ class VideoGenerator:
         """
         self.client = YouTubeClient(yt_api_key)
         self.text_generator = TextGeneratorAgent(temperature=temperature, output_folder=output_folder)
-        self.image_generator = ImageGeneratorAgent(output_folder=output_folder)
+        self.image_generator = TensorArtGenerator(output_folder=output_folder)
         self.audio_generator = AudioGeneratorAgent(output_folder=output_folder)
         self.text_contents = None
         self.output_folder = output_folder # e.g.: /output/topic/title/scripts
