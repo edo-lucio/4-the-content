@@ -3,6 +3,7 @@ title_generation_prompt  = """
     You have to help me writing scripts for a youtube channel with the following aim: {channel_description}.
     Generate {n} YouTube video titles taking inspiration from the following list as examples: ** {titles} **. \n
     Take into consideration also the views to maximize the virality of the video.
+    You can consider creating the same content but you must revisit it and rephrase it to make it different.
     {description} \n
     Please, report each title separated by a newline. \n
     Include ONLY video titles and nothing else."""
@@ -15,10 +16,10 @@ script_generation_prompt = """
     GUIDELINES : **{description}** 
 
     I'm going to give you a list of video's scripts of a channel I want to take inspiration from.
-    Use a similar tone and structure as the following. I'm going to separate each different script by using "**": \n
+    Use a similar tone and structure as the following: \n
     SCRIPT REFERENCES: {transcripts}
 
-    Include only the script that the narrator should play.
+    Return only the script that the narrator should play.
     Do not include informations about the scenes, sections or transitions.
     """
 
@@ -41,6 +42,7 @@ image_prompt_generation_prompt = """
     Each prompt must contain highly descriptive informations about the content of the image and exhaustive guidelines on the artistic style.
     Each image should follow the specific artistic and stylistic elements below, ensuring a coherent visual aesthetic:
     {images_description}.
+    Make the content between the images as different as possible although preserving coherence between each other and the topic.
     Return only the image prompts separated by a newline.
     """
 

@@ -2,7 +2,7 @@ import re
 from itertools import islice
 
 def process_script(script: str):
-    return re.sub(r"\[[^\]]*\]|\*\*.*?\*\*|\*", "", script)
+    return re.sub(r"\[[^\]]*\]|\(.*?\)|\*\*.*?\*\*|\*", "", script)
 
 def process_topic(topic: str):
     return topic.replace(" ", "-")

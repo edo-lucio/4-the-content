@@ -160,7 +160,7 @@ class TextGeneratorAgent(ContentGenerator):
         self.script_description = script_description
         self.images_description = images_description
         self.thumbnail_description = thumbnail_description
-        self.transcripts_joined = "\n**".join(transcripts)
+        self.transcripts_joined = transcripts
         self.n_images = n_images
         self.sections = sections
         self.avg_transcript_length = round(sum(
@@ -311,14 +311,20 @@ class TensorArtGenerator(ContentGenerator):
         stages = kwargs["stages"]
         image_urls = []
 
-        for prompt_batch in batched(prompts_list_filtered, 4):  # Process in chunks of 4
-            print(f"Generating image for batch")
-            url_results = self.client.generate(prompt_batch, stages)
-            image_urls += url_results
-
-        for i, url in enumerate(image_urls):
+        for i, prompt in enumerate(prompts_list_filtered):
+            print(f"Generating image for {prompt}")
+            urls_list = self.client.generate([prompt], stages)[0]
             image_path = f"{folder_path}/{i}.{self.output_format}"
-            self._save_output(image_url=url, image_path=image_path)
+            self._save_output(image_url=urls_list, image_path=image_path)
+
+        # for prompt_batch in batched(prompts_list_filtered, 4):  # Process in chunks of 4
+        #     print(f"Generating image for batch")
+        #     url_results = self.client.generate(prompt_batch, stages)
+        #     image_urls += url_results
+
+        # for i, url in enumerate(image_urls):
+        #     image_path = f"{folder_path}/{i}.{self.output_format}"
+        #     self._save_output(image_url=url, image_path=image_path)
 
 class AudioGeneratorAgent(ContentGenerator):
     def __init__(self, output_folder: str="./audios", output_format: str = "mp3"):
@@ -344,7 +350,8 @@ class AudioGeneratorAgent(ContentGenerator):
         pitch_shift = kwargs["pitch_shift"]
         speed = kwargs["speed"]
         
-        print(f"Generating Audios using Kokoro...")
+        print(f"Generating Audios using Kokoro {script_processed}")
+        
         with self.client.audio.speech.with_streaming_response.create(
             model="kokoro",
             voice=voice, # single or multiple voicepack combo

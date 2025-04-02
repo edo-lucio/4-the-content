@@ -39,8 +39,8 @@ class TensorArtClient:
             if stage["type"] == "DIFFUSION":
                 stage["diffusion"]["prompts"] = [{"text": prompt} for prompt in prompts]
         return stages
-
-    def generate(self, prompts, stages) -> List[str]:
+    
+    def generate(self, prompts: List[str], stages: Dict) -> List[str]:
         """
         Synchronously generate an image and wait for its completion.
         
@@ -59,9 +59,6 @@ class TensorArtClient:
         headers = self._prepare_headers()
         request_id = str(int(time.time() * 1000))
         payload = {"requestId": request_id, "stages": self._prepare_stages(stages, prompts)}
-
-        print(len(prompts))
-        print(prompts)
 
         try:
             post_response = requests.post(self.BASE_URL, headers=headers, data=json.dumps(payload))
@@ -89,7 +86,7 @@ class TensorArtClient:
                 time.sleep(15)
             
             print("Job timed out.")
-            return None
+            return self.generate(prompts=prompts, stages=stages)
         
         except Exception as e:
             print(f"Error in image generation: {e}")
