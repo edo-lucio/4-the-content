@@ -2,6 +2,7 @@ import os
 from typing import List, Dict
 import pandas as pd
 import requests
+import whisper
 
 from utils import process_script, process_title, process_topic, batched
 from prompts import prompts
@@ -33,6 +34,7 @@ class ContentGenerator:
         raise NotImplementedError("Subclasses must implement generate()")
 
 class TextGeneratorAgent(ContentGenerator): 
+    # [Original TextGeneratorAgent code remains unchanged]
     prompts = prompts
 
     def __init__(
@@ -109,18 +111,20 @@ class TextGeneratorAgent(ContentGenerator):
         print(f"\t\t- Generating script")
         script  = ""
 
+        created_sections = []
+
         for section in self.sections:
             section_script = self._generate_section(title=title, section=section, script=script)
-            script += f"\n {section_script}"
+            created_sections.append(section_script)
 
-        return script
+        return " ".join(created_sections)
     
     def _generate_scenes(self, script: str) -> str:
         print(f"\t\t- Generating scenes")
         prompt = self.scenes_generation_prompt.format(script=script)
         return self._request(prompt, max_tokens=self.avg_transcript_length)
     
-    def _generate_image_prompts(self, scenes: str, script: str) -> str:
+    def generate_image_prompts(self, scenes: str, script: str) -> str:
         print(f"\t\t- Generating Image prompts")
         if not scenes.strip():
             prompt = self.image_prompt_generation_prompt.format(
@@ -199,6 +203,7 @@ class TextGeneratorAgent(ContentGenerator):
         return videos
 
 class ImageGeneratorAgent(ContentGenerator):
+    # [Original ImageGeneratorAgent code remains unchanged]
     def __init__(
             self, 
             api_key: str = os.getenv("NEBIUS_API_KEY"), 
@@ -275,8 +280,9 @@ class ImageGeneratorAgent(ContentGenerator):
                 height=height, width=width,
                 guidance_scale=guidance_scale, num_inference_steps=num_inference_steps, 
                 max_sequence_length=max_sequence_length)
-            
+
 class TensorArtGenerator(ContentGenerator): 
+    # [Original TensorArtGenerator code remains unchanged]
     def __init__(
         self, 
         api_key: str = os.getenv("TENSOR_ART_API_KEY"), 
@@ -318,17 +324,8 @@ class TensorArtGenerator(ContentGenerator):
             image_path = f"{folder_path}/{i}.{self.output_format}"
             self._save_output(image_url=urls_list, image_path=image_path)
 
-        # for prompt_batch in batched(prompts_list_filtered, 4):  # Process in chunks of 4
-        #     print(f"Generating image for batch")
-        #     url_results = self.client.generate(prompt_batch, stages)
-        #     image_urls += url_results
-
-        # for i, url in enumerate(image_urls):
-        #     image_path = f"{folder_path}/{i}.{self.output_format}"
-        #     self._save_output(image_url=url, image_path=image_path)
-
 class AudioGeneratorAgent(ContentGenerator):
-
+    # [Original AudioGeneratorAgent code remains unchanged]
     def __init__(self, output_folder: str="./audios", output_format: str = "mp3"):
         client = OpenAI(base_url="http://localhost:8880/v1", api_key="not-needed")
         self.output_format = output_format
@@ -368,6 +365,7 @@ class AudioGeneratorAgent(ContentGenerator):
             self._lower_pitch(audio_path, pitch_shift)
 
 class ZonosAudioGenerator(ContentGenerator):
+    # [Original ZonosAudioGenerator code remains unchanged]
     def __init__(self, api_key:str, output_folder: str="./audios", output_format: str = "mp3"):
         client = ZyphraClient(api_key=api_key)
         self.output_format = output_format
@@ -409,3 +407,150 @@ class ZonosAudioGenerator(ContentGenerator):
             speaking_rate=15,
             model="zonos-v0.1-transformer"  # Default model
         )
+
+# New SRTGeneratorAgent class for audio-to-SRT functionality
+class SRTGeneratorAgent(ContentGenerator):
+    """
+    Agent for generating SRT subtitle files from audio files using Whisper
+    """
+    
+    def __init__(self, output_folder: str="./subtitles", model_size: str="base"):
+        """
+        Initialize the SRT generator
+        
+        Parameters:
+        - output_folder: Directory where SRT files will be saved
+        - model_size: Whisper model size (tiny, base, small, medium, large)
+        """
+        # Note: Whisper doesn't need a client like the other generators, so we pass None
+        super().__init__(output_folder, None)
+        self.model_size = model_size
+        self.model = None  # Will be loaded on first use
+    
+    def _format_time(self, seconds: float) -> str:
+        """
+        Convert seconds to SRT timestamp format (HH:MM:SS,mmm)
+        """
+        milliseconds = int((seconds % 1) * 1000)
+        seconds = int(seconds)
+        minutes, seconds = divmod(seconds, 60)
+        hours, minutes = divmod(minutes, 60)
+        
+        return f"{hours:02d}:{minutes:02d}:{seconds:02d},{milliseconds:03d}"
+    
+    def _save_output(self, segments, output_path: str) -> None:
+        """
+        Save transcribed segments to an SRT file
+        """
+        try:
+            with open(output_path, "w", encoding="utf-8") as srt_file:
+                for i, segment in enumerate(segments, 1):
+                    # Format as SRT entry
+                    srt_file.write(f"{i}\n")
+                    srt_file.write(f"{self._format_time(segment['start'])} --> {self._format_time(segment['end'])}\n")
+                    srt_file.write(f"{segment['text'].strip()}\n\n")
+            print(f"SRT file successfully saved to {output_path}")
+        except Exception as e:
+            print(f"Error saving SRT file: {str(e)}")
+            raise
+    
+    def _load_model(self):
+        """
+        Load the Whisper model if not already loaded
+        """
+        if self.model is None:
+            print(f"Loading Whisper {self.model_size} model...")
+            self.model = whisper.load_model(self.model_size)
+        return self.model
+    
+    def generate(self, path: str, language: str=None, audio_format: str="mp3") -> str:
+        """
+        Generate an SRT file from an audio file
+        
+        Parameters:
+        - audio_path: Path to the audio file
+        - output_path: Path where the SRT file should be saved (default: same as input with .srt extension)
+        - language: Language code (e.g., 'en', 'fr') or None for auto-detection
+        
+        Returns:
+        - Path to the generated SRT file
+        """
+
+        audio_path = f"{path}/audio/audio.{audio_format}"
+        folder_path = self.Folder(f"{path}/subs").path
+        output_path = f"{folder_path}/sub.srt"
+
+        model = self._load_model()
+        
+        print(f"Transcribing audio file: {audio_path}")
+        transcribe_options = {"task": "transcribe"}
+        if language:
+            transcribe_options["language"] = language
+        
+        # Run transcription
+        result = model.transcribe(audio_path, **transcribe_options)
+        
+        # Save the result
+        self._save_output(result["segments"], output_path)
+        
+        print(f"Successfully created SRT file with {len(result['segments'])} entries.")
+        print(f"Detected language: {result.get('language', 'unknown')}")
+        
+        return output_path
+    
+    def generate_batch(self, audio_paths: List[str], output_folder: str=None, language: str=None) -> List[str]:
+        """
+        Generate SRT files for multiple audio files
+        
+        Parameters:
+        - audio_paths: List of paths to audio files
+        - output_folder: Folder where SRT files should be saved (default: same folder as each audio)
+        - language: Language code (e.g., 'en', 'fr') or None for auto-detection
+        
+        Returns:
+        - List of paths to the generated SRT files
+        """
+        output_paths = []
+        
+        for audio_path in audio_paths:
+            # Set output path
+            if output_folder:
+                filename = os.path.basename(audio_path)
+                base_name = os.path.splitext(filename)[0]
+                output_path = os.path.join(output_folder, f"{base_name}.srt")
+            else:
+                output_path = None  # Will use default
+            
+            # Generate SRT
+            srt_path = self.generate(audio_path, output_path, language)
+            output_paths.append(srt_path)
+        
+        return output_paths
+    
+    def generate_for_video_project(self, path: str, audio_filename: str="audio.mp3", language: str=None) -> str:
+        """
+        Generate an SRT file for a video project, following the project structure
+        
+        Parameters:
+        - path: Base path to the project
+        - audio_filename: Name of the audio file (default: "audio.mp3")
+        - language: Language code (e.g., 'en', 'fr') or None for auto-detection
+        
+        Returns:
+        - Path to the generated SRT file
+        """
+        # Construct paths
+        audio_folder = os.path.join(path, "audio")
+        audio_path = os.path.join(audio_folder, audio_filename)
+        subtitles_folder = os.path.join(path, "subtitles")
+        output_path = os.path.join(subtitles_folder, "subtitles.srt")
+        
+        # Create subtitles folder
+        os.makedirs(subtitles_folder, exist_ok=True)
+        
+        # Generate SRT
+        if os.path.exists(audio_path):
+            return self.generate(audio_path, output_path, language)
+        else:
+            print(f"Audio file not found: {audio_path}")
+            return None

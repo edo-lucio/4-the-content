@@ -68,14 +68,9 @@
   "voice": {
     "use": "kokoro",
     "kokoro": {
-      "voice": "am_micheal",
+      "voice": "am_michael",
       "speed": 0.9,
       "pitch_shift": -0.8
-    },
-    "zyphros": {
-      "v": "am_echo+am_onyx",
-      "b": "s",
-      "a": 8
     }
   }
 }

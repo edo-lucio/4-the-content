@@ -1,5 +1,5 @@
 from get_videos import YouTubeClient, Video
-from generators import TextGeneratorAgent, TensorArtGenerator, AudioGeneratorAgent
+from generators import TextGeneratorAgent, TensorArtGenerator, AudioGeneratorAgent, SRTGeneratorAgent
 from settings import VideoConfig
 from typing import List, Dict, Tuple
 import os
@@ -85,6 +85,7 @@ class VideoGenerator:
         self.text_generator = TextGeneratorAgent(temperature=temperature, output_folder=output_folder)
         self.image_generator = TensorArtGenerator(output_folder=output_folder)
         self.audio_generator = AudioGeneratorAgent(output_folder=output_folder)
+        self.subtitles_generator = SRTGeneratorAgent(output_folder=output_folder)
         self.text_contents = None
         self.output_folder = output_folder # e.g.: /output/topic/title/scripts
 
@@ -191,6 +192,7 @@ class VideoGenerator:
 
         for script, path in zip(scripts, paths):
             self.audio_generator.generate(script=script, path=path, audio_settings=audio_settings)
+            self.subtitles_generator.generate(path=path)
 
     def generate_videos(self, video_settings: VideoConfig) -> None:
 
@@ -217,4 +219,5 @@ class VideoGenerator:
 
         if video_settings.script.generate_audios:
             self.generate_audio_content(video_settings.voice)
+
 
