@@ -6,6 +6,8 @@ import requests
 from typing import Dict, Any, Optional, List
 from openai import OpenAI
 
+from zyphra import ZyphraClient
+
 class TensorArtClient:
     def __init__(self, app_id: str, api_key: str):
         self.app_id = app_id

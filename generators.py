@@ -7,6 +7,7 @@ from utils import process_script, process_title, process_topic, batched
 from prompts import prompts
 
 from clients import TensorArtClient, OpenAI
+from zyphra import ZyphraClient
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -304,11 +305,11 @@ class TensorArtGenerator(ContentGenerator):
 
             return response["job"]["successInfo"]["images"][0]["url"]
 
-    def generate(self, prompts_list: List[str], path: str, **kwargs):
+    def generate(self, prompts_list: List[str], path: str, image_settings):
         print("Generating images ...") 
         prompts_list_filtered = [prompt for prompt in prompts_list if prompt.strip()]
         folder_path = self.Folder(f"{path}/images").path
-        stages = kwargs["stages"]
+        stages = image_settings.lora["stages"]
         image_urls = []
 
         for i, prompt in enumerate(prompts_list_filtered):
@@ -327,8 +328,48 @@ class TensorArtGenerator(ContentGenerator):
         #     self._save_output(image_url=url, image_path=image_path)
 
 class AudioGeneratorAgent(ContentGenerator):
+
     def __init__(self, output_folder: str="./audios", output_format: str = "mp3"):
         client = OpenAI(base_url="http://localhost:8880/v1", api_key="not-needed")
+        self.output_format = output_format
+        super().__init__(output_folder, client)
+
+    def _lower_pitch(self, audio_path: str, pitch_shift: float) -> None: 
+        from pydub import AudioSegment
+        file_name = audio_path.split(".")[0]
+        vanilla_audio = AudioSegment.from_mp3(audio_path)
+        overrides = {"frame_rate": int(vanilla_audio.frame_rate * (2.0 ** (pitch_shift / 12.0)))}
+        pitched_audio = vanilla_audio._spawn(vanilla_audio.raw_data, overrides=overrides)
+        pitch_shifted_filename = f'{file_name}.{self.output_format}'
+        pitched_audio.export(pitch_shifted_filename, format=self.output_format)
+
+    def generate(self, script: str, path: str, audio_settings) -> None:
+        script_processed = process_script(script)
+        folder_path = self.Folder(f"{path}/audio").path
+        audio_path = f"{folder_path}/audio.{self.output_format}"
+
+        print(audio_settings)
+
+        voice = audio_settings.voice
+        pitch_shift = audio_settings.pitch_shift
+        speed = audio_settings.speed
+        
+        print(f"Generating Audios using Kokoro {script_processed}")
+        
+        with self.client.audio.speech.with_streaming_response.create(
+            model="kokoro",
+            voice=voice, # single or multiple voicepack combo
+            input=script_processed,
+            speed=speed
+        ) as response:
+            response.stream_to_file(audio_path)
+
+        if pitch_shift:
+            self._lower_pitch(audio_path, pitch_shift)
+
+class ZonosAudioGenerator(ContentGenerator):
+    def __init__(self, api_key:str, output_folder: str="./audios", output_format: str = "mp3"):
+        client = ZyphraClient(api_key=api_key)
         self.output_format = output_format
         super().__init__(output_folder, client)
 
@@ -346,19 +387,25 @@ class AudioGeneratorAgent(ContentGenerator):
         folder_path = self.Folder(f"{path}/audio").path
         audio_path = f"{folder_path}/audio.{self.output_format}"
 
-        voice = kwargs["voice"]
-        pitch_shift = kwargs["pitch_shift"]
-        speed = kwargs["speed"]
-        
+        clone_path = kwargs["clone_path"]
+
+        if clone_path:
+            with open(clone_path, "rb") as f:
+                import base64
+                audio_base64 = base64.b64encode(f.read()).decode('utf-8')
+
+            audio_data = self.client.audio.speech.create(
+                text="This will use the cloned voice",
+                speaker_audio=audio_base64,
+                speaking_rate=15,
+                output_path = audio_path
+            )
+
         print(f"Generating Audios using Kokoro {script_processed}")
         
-        with self.client.audio.speech.with_streaming_response.create(
-            model="kokoro",
-            voice=voice, # single or multiple voicepack combo
-            input=script_processed,
-            speed=speed
-        ) as response:
-            response.stream_to_file(audio_path)
-
-        if pitch_shift:
-            self._lower_pitch(audio_path, pitch_shift)
+        # Text-to-speech
+        audio_data = self.client.audio.speech.create(
+            text="Hello, world!",
+            speaking_rate=15,
+            model="zonos-v0.1-transformer"  # Default model
+        )

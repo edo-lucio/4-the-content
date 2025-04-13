@@ -1,7 +1,9 @@
 from get_videos import YouTubeClient, Video
 from generators import TextGeneratorAgent, TensorArtGenerator, AudioGeneratorAgent
+from settings import VideoConfig
 from typing import List, Dict, Tuple
 import os
+from dataclasses import asdict
 
 import pandas as pd
 
@@ -126,7 +128,7 @@ class VideoGenerator:
         
         return prompts, paths
 
-    def generate_text_content(self, **kwargs) -> List[Dict]:
+    def generate_text_content(self, text_settings) -> List[Dict]:
         """
         Generate scripts based on channel content.
         
@@ -141,46 +143,35 @@ class VideoGenerator:
         Returns:
             List of generated scripts
         """
-        handle = kwargs["handle"]
-        max_reference_titles = kwargs["max_reference_titles"]
-        max_reference_transcripts = kwargs["max_reference_transcripts"]
-        n_output_videos = kwargs["n_output_videos"]
-        topic = kwargs["topic"]
-        title_description = kwargs["title_description"]
-        script_description = kwargs["script_description"]
-        images_description = kwargs["images_description"]
-        thumbnail_description = kwargs["thumbnail_description"]
-        sections = kwargs["sections"]
-        from_scenes = kwargs["from_scenes"]
-        n_images = kwargs["n_images"]
 
         titles_references = []
         transcripts_references = []
-        n_video_examples = max(max_reference_titles, max_reference_transcripts)
+        n_video_examples = max(text_settings.max_reference_titles, text_settings.max_reference_transcripts)
 
-        if handle:
-            video_examples, channel_description = self._get_channel(handle, n_video_examples)
-            titles_references = [f"Title: {video.title}, Views: {video.views}" for video in video_examples][:max_reference_titles]
-            transcripts_references = [video.transcript for video in video_examples][:max_reference_transcripts]
+        if text_settings.handle:
+            video_examples, channel_description = self._get_channel(text_settings.handle, n_video_examples)
+            titles_references = [
+                f"Title: {video.title}, Views: {video.views}" for video in video_examples][:text_settings.max_reference_titles]
+            transcripts_references = [video.transcript for video in video_examples][:text_settings.max_reference_transcripts]
 
         self.text_contents = self.text_generator.generate(
-            n_output_scripts=n_output_videos,
-            topic=topic,
+            n_output_scripts=text_settings.n_output_videos,
+            topic=text_settings.topic,
             channel_description=channel_description,
-            thumbnail_description=thumbnail_description,
+            thumbnail_description=text_settings.thumbnail_description,
             titles_examples=titles_references,
-            title_description=title_description,
-            script_description=script_description,
-            images_description=images_description,
-            n_images=n_images,
-            from_scenes=from_scenes,
+            title_description=text_settings.title_description,
+            script_description=text_settings.script_description,
+            images_description=text_settings.images_description,
+            n_images=text_settings.n_images,
+            from_scenes=text_settings.from_scenes,
             transcripts=transcripts_references,
-            sections=sections
+            sections=text_settings.sections
         )
 
         return self.text_contents
 
-    def generate_image_content(self, **kwargs) -> List[str]:
+    def generate_image_content(self, image_settings) -> List[str]:
         """ 
             height: int = 1024,
             width: int = 1024,
@@ -193,15 +184,15 @@ class VideoGenerator:
         prompts, paths = self._get_content("image_prompts")
 
         for prompt_list, path in zip(prompts, paths):
-            self.image_generator.generate(prompts_list=prompt_list, path=path, **kwargs)
+            self.image_generator.generate(prompts_list=prompt_list, path=path, image_settings=image_settings)
 
-    def generate_audio_content(self, **kwargs):
+    def generate_audio_content(self, audio_settings):
         scripts, paths = self._get_content("scripts")
 
         for script, path in zip(scripts, paths):
-            self.audio_generator.generate(script=script, path=path, **kwargs)
+            self.audio_generator.generate(script=script, path=path, audio_settings=audio_settings)
 
-    def generate_videos(self, video_settings: VideoSettings) -> None:
+    def generate_videos(self, video_settings: VideoConfig) -> None:
 
         """
         Complete pipeline for copying channel content and generating scripts.
@@ -218,12 +209,12 @@ class VideoGenerator:
             List of generated scripts
         """
 
-        if video_settings.generate_scripts:
-            self.generate_text_content(**video_settings.text_settings)
+        if video_settings.script.generate_scripts:
+            self.generate_text_content(video_settings.script)
         
-        if video_settings.generate_images:
-            self.generate_image_content(**video_settings.image_settings)
+        if video_settings.script.generate_images:
+            self.generate_image_content(video_settings.images)
 
-        if video_settings.generate_audios:
-            self.generate_audio_content(**video_settings.audio_settings)
+        if video_settings.script.generate_audios:
+            self.generate_audio_content(video_settings.voice)
 
